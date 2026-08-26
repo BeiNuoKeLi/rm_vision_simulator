@@ -1,7 +1,8 @@
+using System;
 using System.Collections;
-using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
-using ROS2;
+using NativeWebSocket;
 
 public class GimbalControl : MonoBehaviour
 {
@@ -9,13 +10,18 @@ public class GimbalControl : MonoBehaviour
     public float min_pitch_angle = -25;
     public bool enable_mouse_control = true;
 
+    [Header("ROS连接配置")]
+    public string rosbridgeWsUrl = "ws://172.25.243.23:9090";
+    public string jointStateTopic = "/joint_states";
+
     private Transform pitch_transform;
     private Transform yaw_transform;
-    private ROS2UnityComponent ros2Unity;
-    private ROS2Node ros2Node;
-    private IPublisher<sensor_msgs.msg.JointState> jointStatePub;
 
-    // Start is called before the first frame update
+    private WebSocket ws;
+    private bool isWsConnected = false;
+
+    private static readonly DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
     void Start()
     {
         var yaw_link = this.name + "/base_link/yaw_link";
@@ -25,13 +31,41 @@ public class GimbalControl : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.Locked;
 
-        ros2Unity = GetComponent<ROS2UnityComponent>();
+        InitWebSocket();
     }
 
-    // Update is called once per frame
+    private async void InitWebSocket()
+    {
+        try
+        {
+            ws = new WebSocket(rosbridgeWsUrl);
+            ws.OnOpen += OnWsConnected;
+            ws.OnError += (error) => Debug.LogError($"[GimbalControl] WebSocket错误: {error}");
+            ws.OnClose += async (code) =>
+            {
+                Debug.LogWarning($"[GimbalControl] WebSocket断开: {code}");
+                isWsConnected = false;
+            };
+            await ws.Connect();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[GimbalControl] 连接ROSBridge失败: {ex.Message}");
+        }
+    }
+
+    private void OnWsConnected()
+    {
+        Debug.Log($"[GimbalControl] 已连接ROSBridge: {rosbridgeWsUrl}");
+        isWsConnected = true;
+
+        string advertiseMsg = $"{{\"op\":\"advertise\",\"topic\":\"{jointStateTopic}\",\"type\":\"sensor_msgs/msg/JointState\"}}";
+        ws.SendText(advertiseMsg);
+        Debug.Log($"[GimbalControl] 已发布话题: {jointStateTopic}");
+    }
+
     void FixedUpdate()
     {
-        // Press ALT to change mouse control
         if (Input.GetKeyDown(KeyCode.LeftAlt) || Input.GetKeyDown(KeyCode.RightAlt))
         {
             enable_mouse_control = !enable_mouse_control;
@@ -40,8 +74,6 @@ public class GimbalControl : MonoBehaviour
 
         if (enable_mouse_control)
         {
-
-            // Mouse controls
             var mouse_x = Input.GetAxis("Mouse X");
             var mouse_y = Input.GetAxis("Mouse Y");
             yaw_transform.Rotate(0, mouse_x, 0);
@@ -56,33 +88,60 @@ public class GimbalControl : MonoBehaviour
             pitch_transform.localEulerAngles = new Vector3(pitch_angle, 180, 0);
         }
 
-        if (ros2Unity.Ok())
+        if (isWsConnected && ws != null)
         {
-            if (ros2Node == null)
-            {
-                ros2Node = ros2Unity.CreateNode("ROS2UnityJointNode");
-                var qos = new QualityOfServiceProfile();
-                qos.SetHistory(HistoryPolicy.QOS_POLICY_HISTORY_KEEP_LAST, 1);
-                jointStatePub = ros2Node.CreatePublisher<sensor_msgs.msg.JointState>(
-                    "/joint_states", qos);
-            }
+            TimeSpan timeSinceEpoch = DateTime.UtcNow - epoch;
+            long sec = (long)timeSinceEpoch.TotalSeconds;
+            long nano = (timeSinceEpoch.Ticks * 100) % 1000000000;
+
+            double yaw = -yaw_transform.localEulerAngles.y / 180.0 * Math.PI;
+            double pitch = pitch_transform.localEulerAngles.x / 180.0 * Math.PI;
+
+            string msg = $"{{" +
+                $"\"op\":\"publish\"," +
+                $"\"topic\":\"{jointStateTopic}\"," +
+                $"\"msg\":{{" +
+                    $"\"header\":{{\"stamp\":{{\"sec\":{sec},\"nanosec\":{nano}}},\"frame_id\":\"\"}}," +
+                    $"\"name\":[\"yaw_joint\",\"pitch_joint\"]," +
+                    $"\"position\":[{yaw.ToString("F6")},{pitch.ToString("F6")}]" +
+                $"}}" +
+            $"}}";
+
+            ws.SendText(msg);
         }
+    }
 
-        if (jointStatePub != null)
+    void Update()
+    {
+#if !UNITY_WEBGL || UNITY_EDITOR
+        if (ws != null)
         {
-            // Get timestamp
-            var timestamp = new builtin_interfaces.msg.Time();
-            ros2Node.clock.UpdateROSClockTime(timestamp);
+            ws.DispatchMessageQueue();
+        }
+#endif
+    }
 
-            var msg = new sensor_msgs.msg.JointState();
-            msg.Header.Stamp = timestamp;
-            msg.Name = new string[] { "yaw_joint", "pitch_joint" };
-            msg.Position = new double[] {
-                // radians
-                -yaw_transform.localEulerAngles.y / 180 * Mathf.PI,
-                pitch_transform.localEulerAngles.x / 180 * Mathf.PI
-            };
-            jointStatePub.Publish(msg);
+    private async void OnDisable()
+    {
+        if (ws != null && isWsConnected)
+        {
+            try
+            {
+                string unadvertiseMsg = $"{{\"op\":\"unadvertise\",\"topic\":\"{jointStateTopic}\"}}";
+                await ws.SendText(unadvertiseMsg);
+                await ws.Close();
+            }
+            catch { }
+        }
+    }
+
+    private async void OnApplicationQuit()
+    {
+        if (ws != null && isWsConnected)
+        {
+            string unadvertiseMsg = $"{{\"op\":\"unadvertise\",\"topic\":\"{jointStateTopic}\"}}";
+            await ws.SendText(unadvertiseMsg);
+            await ws.Close();
         }
     }
 }

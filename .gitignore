@@ -63,3 +63,28 @@ crashlytics-build.properties
 
 # 3rd Party
 Ros2ForUnity/
+## Local Unity/editor files
+/UserSettings/
+/Assets/last_camera_info.json
+/Assets/last_camera_info.json.meta
+
+## Unused duplicate assets
+/Assets/Materials/Materials/
+
+## Downloaded NativeWebSocket repository extras
+/Assets/NativeWebSocket-master/.github/
+/Assets/NativeWebSocket-master/Media/
+/Assets/NativeWebSocket-master/NodeServer/
+/Assets/NativeWebSocket-master/NativeWebSocket/Packages/
+/Assets/NativeWebSocket-master/NativeWebSocket/ProjectSettings/
+/Assets/NativeWebSocket-master/NativeWebSocket/Assets/Samples~/
+/Assets/NativeWebSocket-master/NativeWebSocket/Assets/WebSocketExample.meta
+/Assets/NativeWebSocket-master/README.md
+/Assets/NativeWebSocket-master/README.md.meta
+/Assets/NativeWebSocket-master/.editorconfig
+/Assets/NativeWebSocket-master/.gitignore
+/Assets/Materials/Materials.meta
+/Assets/NativeWebSocket-master/Media.meta
+/Assets/NativeWebSocket-master/NativeWebSocket/Packages.meta
+/Assets/NativeWebSocket-master/NativeWebSocket/ProjectSettings.meta
+/Assets/NativeWebSocket-master/NodeServer.meta
