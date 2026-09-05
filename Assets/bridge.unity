@@ -400,29 +400,21 @@ MonoBehaviour:
   m_GameObject: {fileID: 130137430}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2e97a989774568b40919c2e532b9095b, type: 3}
+  m_Script: {fileID: 11500000, guid: 754fd90819856e447a9331e23572a884, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   mainCamera: {fileID: 0}
   captureWidth: 640
   captureHeight: 480
-  sendRate: 0.5
-  rosbridgeUrl: ws://172.25.243.23:9090
-  topicName: /image_raw
-  cameraInfoTopic: /camera_info
+  sendRate: 0.0667
+  serverHost: 172.25.243.23
+  serverPort: 10001
   useAutoIntrinsics: 1
   fx: 500
   fy: 500
   cx: 320
   cy: 240
-  distortionCoeffs:
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
   distortionModel: plumb_bob
-  sendCameraInfoEachFrame: 1
 --- !u!1001 &640285584
 PrefabInstance:
   m_ObjectHideFlags: 0

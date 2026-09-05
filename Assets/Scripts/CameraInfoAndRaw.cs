@@ -8,10 +8,10 @@ using NativeWebSocket;
 public class CameraInfoAndRaw : MonoBehaviour
 {
     [Header("Camera Settings")]
-    public Camera mainCamera;              // ÓÃÓÚÏÔÊ¾µÄÖ÷ÉãÏñ»ú£¨±£³Ö¿É¼û£©
-    public int captureWidth = 640;         // ·Ö±æÂÊ£¨¿Éµ÷£¬Ô½´óÔ½Âı£©
+    public Camera mainCamera;              // ç”¨äºæ˜¾ç¤ºçš„ä¸»æ‘„åƒæœºï¼ˆä¿æŒå¯è§ï¼‰
+    public int captureWidth = 640;         // åˆ†è¾¨ç‡ï¼ˆå¯è°ƒï¼Œè¶Šå¤§è¶Šæ…¢ï¼‰
     public int captureHeight = 480;
-    public float sendRate = 0.1f;          // Ãë£¬Ã¿Ö¡·¢ËÍ¼ä¸ô£¨Ä¬ÈÏ 0.5s£¬²âÊÔÓÃ£©£¬½¨Òé >=0.1f
+    public float sendRate = 0.5f;          // ç§’ï¼Œæ¯å¸§å‘é€é—´éš”ã€‚å»¶è¿Ÿæ•æ„Ÿåœºæ™¯å»ºè®® 0.1f (10Hz)ï¼Œ0.5f åªæœ‰ 2Hz
 
     [Header("ROS Settings")]
     public string rosbridgeUrl = "ws://172.25.243.23:9090"; // WSL2 IP
@@ -52,12 +52,12 @@ public class CameraInfoAndRaw : MonoBehaviour
             return;
         }
 
-        // Ê¹ÓÃÖ÷ÉãÏñ»úµÄ RenderTexture
+        // ä½¿ç”¨ä¸»æ‘„åƒæœºçš„ RenderTexture
         renderTexture = new RenderTexture(captureWidth, captureHeight, 24);
         mainCamera.targetTexture = renderTexture;
         texture2D = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
 
-        // ³õÊ¼»¯ WebSocket
+        // åˆå§‹åŒ– WebSocket
         websocket = new WebSocket(rosbridgeUrl);
 
         websocket.OnOpen += () =>
@@ -85,7 +85,7 @@ public class CameraInfoAndRaw : MonoBehaviour
                 Debug.Log("[ROS] Published camera_info (initial).");
             }
 
-            // Æô¶¯·¢ËÍĞ­³Ì£¨È·±£Ö»Æô¶¯Ò»´Î£©
+            // å¯åŠ¨å‘é€åç¨‹ï¼ˆç¡®ä¿åªå¯åŠ¨ä¸€æ¬¡ï¼‰
             if (!isSending) StartCoroutine(SendCameraFrames());
         };
 
@@ -115,15 +115,17 @@ public class CameraInfoAndRaw : MonoBehaviour
     {
         isSending = true;
 
-        // ÎªÁËĞÔÄÜ£¬ÖØ¸´·ÖÅäStringBuilderÒ»´Î£¨ClearºóÖØÓÃ£©
-        StringBuilder sb = new StringBuilder(captureWidth * captureHeight * 3 / 2); // Ô¤·ÖÅäÒ»¸öºÏÀí´óĞ¡
-        StringBuilder sbData = new StringBuilder(captureWidth * captureHeight * 3 / 2); // for image data
+        // æ€§èƒ½è¯´æ˜ï¼š
+        // å›¾åƒ data å­—æ®µä»¥ base64 å­—ç¬¦ä¸²å‘é€ï¼ˆrosbridge_suite åŸç”Ÿæ”¯æŒ uint8[] çš„ base64 ç¼–ç ï¼Œ
+        // å…¶å‡ºç«™åºåˆ—åŒ–ä¹Ÿæ˜¯ base64ï¼‰ã€‚è‹¥é€å­—èŠ‚è½¬åè¿›åˆ¶é€—å·æ•°ç»„ï¼Œ640x480 ä¼šè¢«è†¨èƒ€æˆ ~3.2MB JSONï¼Œ
+        // Unity ä¸»çº¿ç¨‹ 92 ä¸‡æ¬¡ ToString + rosbridge è§£æ 92 ä¸‡ä¸ª int token éƒ½ææ…¢ï¼Œæ˜¯å»¶è¿Ÿçš„å…ƒå‡¶ã€‚
+        int frameCount = 0;
 
         while (isConnected && this != null)
         {
             yield return new WaitForSeconds(sendRate);
 
-            // Ö±½ÓäÖÈ¾Ö÷ÉãÏñ»úµÄÍ¼Ïñµ½ RenderTexture
+            // ç›´æ¥æ¸²æŸ“ä¸»æ‘„åƒæœºçš„å›¾åƒåˆ° RenderTexture
             mainCamera.Render();
 
             RenderTexture.active = renderTexture;
@@ -133,29 +135,23 @@ public class CameraInfoAndRaw : MonoBehaviour
 
             byte[] rawBytes = texture2D.GetRawTextureData(); // RGB24: length = w*h*3
 
-            // ========== ´¹Ö±·­×ªÏñËØÊı×é£¨½öĞŞ¸ÄÕâ²¿·Ö£©==========
-            int rowBytes = captureWidth * 3; // Ã¿ĞĞµÄ×Ö½ÚÊı£¨RGB24£º¿í¡Á3£©
-            byte[] flippedBytes = new byte[rawBytes.Length]; // ´æ´¢·­×ªºóµÄ×Ö½Ú
-            // ´Ó×îºóÒ»ĞĞ¿ªÊ¼£¬ÖğĞĞ¸´ÖÆµ½ĞÂÊı×é
+            // ========== å‚ç›´ç¿»è½¬åƒç´ æ•°ç»„ï¼ˆROS å›¾åƒè¡Œåº top-downï¼ŒReadPixels ä¸º bottom-upï¼‰==========
+            int rowBytes = captureWidth * 3; // æ¯è¡Œçš„å­—èŠ‚æ•°ï¼ˆRGB24ï¼šå®½Ã—3ï¼‰
+            byte[] flippedBytes = new byte[rawBytes.Length]; // å­˜å‚¨ç¿»è½¬åçš„å­—èŠ‚
+            // ä»æœ€åä¸€è¡Œå¼€å§‹ï¼Œé€è¡Œå¤åˆ¶åˆ°æ–°æ•°ç»„
             for (int row = 0; row < captureHeight; row++)
             {
                 int srcStart = row * rowBytes;
                 int dstStart = (captureHeight - 1 - row) * rowBytes;
                 Array.Copy(rawBytes, srcStart, flippedBytes, dstStart, rowBytes);
             }
-            rawBytes = flippedBytes; // Ìæ»»Îª·­×ªºóµÄÊı×é
-            // ========== ·­×ªÂß¼­½áÊø ==========
+            rawBytes = flippedBytes; // æ›¿æ¢ä¸ºç¿»è½¬åçš„æ•°ç»„
+            // ========== ç¿»è½¬é€»è¾‘ç»“æŸ ==========
 
-            // Æ´½Ó JSON µÄ data Êı×é£¨uint8[]£©Îª¶ººÅ·Ö¸ôµÄÊı×Ö
-            sbData.Clear();
-            for (int i = 0; i < rawBytes.Length; i++)
-            {
-                sbData.Append(rawBytes[i].ToString(CultureInfo.InvariantCulture));
-                if (i < rawBytes.Length - 1) sbData.Append(',');
-            }
-            string dataArrayText = sbData.ToString();
+            // base64 ç¼–ç  dataï¼ˆä¸€æ¬¡è°ƒç”¨æ›¿ä»£ 92 ä¸‡æ¬¡ ToString + é€—å·æ‹¼æ¥ï¼‰
+            string dataArrayText = Convert.ToBase64String(rawBytes);
 
-            // ¹¹½¨ÍêÕû publish JSON£¨ÊÖ¹¤Æ´½ÓÒÔ±ÜÃâ JsonUtility ¶Ô´óÊı×éµÄÏŞÖÆ£©
+            // æ„å»ºå®Œæ•´ publish JSONï¼ˆæ‰‹å·¥æ‹¼æ¥ä»¥é¿å… JsonUtility å¯¹å¤§æ•°ç»„çš„é™åˆ¶ï¼‰
             long sec = DateTimeOffset.Now.ToUnixTimeSeconds();
             uint nanosec = (uint)(DateTimeOffset.Now.ToUnixTimeMilliseconds() % 1000) * 1000000u;
             string publishJson =
@@ -166,10 +162,10 @@ public class CameraInfoAndRaw : MonoBehaviour
                   "\"encoding\":\"rgb8\"," +
                   "\"is_bigendian\":0," +
                   "\"step\":" + (captureWidth * 3) + "," +
-                  "\"data\":[" + dataArrayText + "]" +
+                  "\"data\":\"" + dataArrayText + "\"" +
                 "}}";
 
-            // ·¢ËÍ camera_info Ã¿Ö¡£¨Èç¹ûÓÃ»§Ñ¡ÔñÕâÑù£©
+            // å‘é€ camera_info æ¯å¸§ï¼ˆå¦‚æœç”¨æˆ·é€‰æ‹©è¿™æ ·ï¼‰
             if (sendCameraInfoEachFrame)
             {
                 string camInfoJson = BuildCameraInfoJson(sec, nanosec);
@@ -183,11 +179,13 @@ public class CameraInfoAndRaw : MonoBehaviour
                 }
             }
 
-            // ·¢ËÍ£¨try-catch ±ÜÃâÄ³Ğ©´íÎóÖĞ¶ÏĞ­³Ì£©
+            // å‘é€ï¼ˆtry-catch é¿å…æŸäº›é”™è¯¯ä¸­æ–­åç¨‹ï¼‰ï¼›æ—¥å¿—é™é¢‘ï¼Œé¿å…æ¯å¸§åˆ·å±æ‹–æ…¢ä¸»çº¿ç¨‹
             try
             {
                 websocket.SendText(publishJson);
-                Debug.Log("[ROS] Sent raw frame: bytes=" + rawBytes.Length + " json_size=" + publishJson.Length);
+                frameCount++;
+                if ((frameCount % 100) == 0)
+                    Debug.Log("[ROS] Sent raw frame #" + frameCount + ": bytes=" + rawBytes.Length + " json_len=" + publishJson.Length);
             }
             catch (Exception ex)
             {
@@ -199,8 +197,8 @@ public class CameraInfoAndRaw : MonoBehaviour
     }
 
     /// <summary>
-    /// ¹¹½¨ sensor_msgs/CameraInfo JSON£¨rosbridge ¸ñÊ½£©
-    /// header.stamp Ê¹ÓÃ´«ÈëµÄ sec/nanosec
+    /// æ„å»º sensor_msgs/CameraInfo JSONï¼ˆrosbridge æ ¼å¼ï¼‰
+    /// header.stamp ä½¿ç”¨ä¼ å…¥çš„ sec/nanosec
     /// k: 3x3 row-major
     /// r: 3x3 row-major (identity)
     /// p: 3x4 row-major (projection matrix)
@@ -208,7 +206,7 @@ public class CameraInfoAndRaw : MonoBehaviour
     /// </summary>
     private string BuildCameraInfoJson(long sec, uint nanosec)
     {
-        // ¼ÆËã/È·¶¨ÄÚ²Î
+        // è®¡ç®—/ç¡®å®šå†…å‚
         float useFx = fx;
         float useFy = fy;
         float useCx = cx;
@@ -216,7 +214,7 @@ public class CameraInfoAndRaw : MonoBehaviour
 
         if (useAutoIntrinsics && mainCamera != null)
         {
-            // Unity Camera.fieldOfView ÊÇ´¹Ö± FOV£¨¶È£©
+            // Unity Camera.fieldOfView æ˜¯å‚ç›´ FOVï¼ˆåº¦ï¼‰
             float vFovRad = mainCamera.fieldOfView * Mathf.Deg2Rad;
             // focal in pixels: f = (height/2) / tan(vFov/2)
             useFy = (captureHeight / 2f) / Mathf.Tan(vFovRad / 2f);
@@ -296,7 +294,7 @@ public class CameraInfoAndRaw : MonoBehaviour
             await websocket.Close();
         }
 
-        // ÇåÀí´´½¨µÄ¶ÔÏó
+        // æ¸…ç†åˆ›å»ºçš„å¯¹è±¡
         if (renderTexture != null)
         {
             renderTexture.Release();
